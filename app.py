@@ -1,15 +1,15 @@
 import streamlit as st
 import unicodedata
 
-# 1. إعدادات الصفحة العامة (يجب أن تكون في أول سطر)
+# إعدادات الصفحة العامة
 st.set_page_config(
     page_title="Deep Clean | منظف النصوص",
     page_icon="🛡️",
-    layout="wide",  # استخدام كامل عرض الشاشة
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- CSS مخصص لتحسين الخطوط والمظهر (اختياري) ---
+# --- CSS  ---
 st.markdown("""
 <style>
     .big-font { font-size:20px !important; font-weight: bold; }
@@ -18,7 +18,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- الدوال البرمجية (Logic) ---
+# --- (Logic) ---
 INVISIBLE_CHARS = {
     0x200B, 0x200C, 0x200D, 0x200E, 0x200F, 0xFEFF,
     0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
@@ -63,7 +63,7 @@ def process_text(text):
 
     return "".join(clean_chars), visual_html, total_removed, removed_stats
 
-# --- الشريط الجانبي (Sidebar) ---
+# --- (Sidebar) ---
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2092/2092663.png", width=80)
     st.title("Deep Clean Tool")
@@ -78,11 +78,11 @@ with st.sidebar:
     st.markdown("---")
     st.info("💡 **نصيحة:** استخدم هذه الأداة قبل نشر المنشورات في وسائل التواصل أو إرسال الأكواد البرمجية.")
     
-    # خيار توليد نص للتجربة (نقلناه هنا للترتيب)
+    # خيار توليد نص للتجربة 
     if st.button("توليد نص ملغّم للتجربة"):
-        st.session_state['input_text'] = "نص تجريبي" + "\u200b" + " " + "يحتوي مخفي" + "\u200f"
+        st.session_state['input_text'] = "هذا النص​ يبدو طبيعياً جداً،‏ لكنه في الحقيقة​ يحتوي على‎ رموز مخفية لا تراها عينك!"
 
-# --- الواجهة الرئيسية (Main UI) ---
+# --- (Main UI) ---
 st.title("🛡️ كاشف ومنظف النصوص الاحترافي")
 st.caption("احمِ خصوصيتك وتخلص من العلامات المائية المخفية في النصوص.")
 
@@ -97,7 +97,7 @@ text_input = st.text_area(
     placeholder="الصق النص هنا..."
 )
 
-# زر التنفيذ (كبير ومميز)
+# زر التنفيذ 
 if st.button("🚀 فحص وتنظيف النص", type="primary", use_container_width=True):
     if text_input:
         clean_text, visual_html, count, stats = process_text(text_input)
@@ -105,7 +105,7 @@ if st.button("🚀 فحص وتنظيف النص", type="primary", use_container_
         st.markdown("---")
         
         if count > 0:
-            # عرض الإحصائيات بشكل جميل
+            # عرض الإحصائيات
             c1, c2, c3 = st.columns(3)
             with c1: st.metric("حالة النص", "ملوث ⚠️", delta_color="inverse")
             with c2: st.metric("عدد الأحرف المخفية", f"{count}", delta="-"+str(count))
@@ -134,3 +134,4 @@ if st.button("🚀 فحص وتنظيف النص", type="primary", use_container_
             
     else:
         st.warning("الرجاء إدخال نص أولاً للبدء.")
+
