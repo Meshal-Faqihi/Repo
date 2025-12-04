@@ -2,99 +2,87 @@ import streamlit as st
 import unicodedata
 
 # إعداد الصفحة
-st.set_page_config(page_title="كاشف النصوص المخفية", page_icon="🕵️‍♂️", layout="centered")
+st.set_page_config(page_title="كاشف النصوص المتقدم", page_icon="🛡️", layout="centered")
 
-def get_char_description(char):
+# قائمة صريحة بأكواد الرموز المخفية الشائعة لضمان حذفها
+INVISIBLE_CHARS = {
+    0x200B, # Zero Width Space
+    0x200C, # Zero Width Non-Joiner
+    0x200D, # Zero Width Joiner
+    0x200E, # Left-to-Right Mark
+    0x200F, # Right-to-Left Mark
+    0xFEFF, # Byte Order Mark
+    0x202A, 0x202B, 0x202C, 0x202D, 0x202E, # Directional Formatting
+    0x2060, 0x2061, 0x2062, 0x2063, 0x2064, # Invisible Separators
+}
+
+def is_hidden(char):
     """
-    دالة لترجمة الرموز المخفية إلى أسماء مقروءة
+    دالة دقيقة جداً لتحديد هل الحرف مخفي أم لا
     """
     code = ord(char)
-    if code == 0x200B: return "ZWSP" # مسافة صفرية
-    if code == 0x200C: return "ZWNJ" # فاصل صفر
-    if code == 0x200D: return "ZWDJ" # واصل صفر
-    if code == 0x200E: return "LRM"  # علامة يسار-يمين
-    if code == 0x200F: return "RLM"  # علامة يمين-يسار
-    if code == 0xA0:   return "NBSP" # مسافة غير منقطعة
-    return "HIDDEN"
-
-def reveal_text(text):
-    """
-    دالة تقوم باستبدال الأحرف المخفية بنصوص حمراء واضحة
-    """
-    revealed_text = ""
-    hidden_count = 0
     
-    for char in text:
-        category = unicodedata.category(char)
-        # تحديد الأحرف المخفية وأحرف التحكم (باستثناء الأسطر والمسافات العادية)
-        if category == 'Cf' or (category == 'Cc' and char not in ['\n', '\t', '\r']):
-            # استبدال الحرف المخفي برمز أحمر
-            symbol_name = get_char_description(char)
-            revealed_text += f":red[**[{symbol_name}]**]"
-            hidden_count += 1
-        else:
-            revealed_text += char
-            
-    return revealed_text, hidden_count
-
-def clean_text(text):
-    """
-    دالة الحذف النهائي
-    """
-    cleaned_text = []
-    for char in text:
-        category = unicodedata.category(char)
-        if not (category == 'Cf' or (category == 'Cc' and char not in ['\n', '\t', '\r'])):
-            cleaned_text.append(char)
-    return "".join(cleaned_text)
-
-# --- واجهة المستخدم ---
-
-st.title("🕵️‍♂️ كاشف النصوص والرموز المخفية")
-st.markdown("هذه الأداة تكشف لك ما لا تراه عينك في النصوص المنسوخة من الذكاء الاصطناعي أو المواقع.")
-
-# 1. منطقة الإدخال
-text_input = st.text_area("1️⃣ الصق النص المشكوك فيه هنا:", height=150, placeholder="الصق النص هنا...")
-
-if text_input:
-    # 2. زر الفحص
-    st.markdown("---")
-    col1, col2 = st.columns([1, 2])
+    # 1. هل هو في قائمتنا المحظورة الصريحة؟
+    if code in INVISIBLE_CHARS:
+        return True
     
-    with col1:
-        check_btn = st.button("🔍 افحص النص (أين الأحرف المخفية؟)", use_container_width=True)
+    # 2. هل هو ضمن نطاقات اليونيكود الخاصة بالتنسيق؟
+    category = unicodedata.category(char)
+    if category == 'Cf': return True
+    if category == 'Cc' and char not in ['\n', '\t', '\r']: return True
     
-    # مكان عرض النتائج
-    if check_btn:
-        revealed, count = reveal_text(text_input)
+    return False
+
+def get_char_name(char):
+    code = ord(char)
+    if code == 0x200B: return "ZWSP"
+    if code == 0x200E: return "LRM"
+    if code == 0x200F: return "RLM"
+    return hex(code)
+
+# --- الواجهة ---
+st.title("🛡️ منظف النصوص العميق")
+st.markdown("هذا الإصدار يستخدم فحصاً دقيقاً (Deep Scan) لكشف ما تخفيه المتصفحات.")
+
+text_input = st.text_area("الصق النص هنا:", height=150)
+
+# ميزة جديدة: إنشاء نص ملغم للتجربة
+if st.checkbox("أريد تجربة نص ملغم (للتأكد من عمل الأداة)"):
+    # ننشئ نصاً برمجياً يحتوي على رموز حقيقية لا يحذفها المتصفح
+    dirty_text = "تجربة" + "\u200b" + " " + "حقيقية" + "\u200f"
+    st.info("انسخ هذا النص الموجود في الصندوق بالأسفل (يحتوي على ZWSP و RLM):")
+    st.code(dirty_text, language=None)
+
+if st.button("افحص ونظف النص"):
+    if text_input:
+        cleaned_chars = []
+        removed_log = []
         
-        if count > 0:
-            st.warning(f"⚠️ تم اكتشاف **{count}** أحرف أو رموز مخفية!", icon="⚠️")
-            st.markdown("### 👀 النص كما يراه الحاسوب:")
-            st.caption("الرموز الملونة بالأحمر هي بيانات مخفية تم كشفها:")
-            
-            # عرض النص مع التلوين (نستخدم حاوية لتوضيح النص)
-            st.markdown(
-                f"""
-                <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border: 1px solid #ff4b4b; line-height: 2;">
-                {revealed}
-                </div>
-                """, 
-                unsafe_allow_html=True
-            )
-            
-            st.markdown("---")
-            st.markdown("### هل تريد تنظيفه؟")
-            
-            # زر التنظيف يظهر فقط عند وجود مشكلة
-            if st.button("🧹 نعم، نظف النص الآن"):
-                final_clean = clean_text(text_input)
-                st.success("✅ تم تنظيف النص بنجاح!")
-                st.text_area("النص النظيف (جاهز للنسخ):", value=final_clean, height=150)
+        for char in text_input:
+            if is_hidden(char):
+                removed_log.append(get_char_name(char))
+            else:
+                cleaned_chars.append(char)
                 
+        cleaned_text = "".join(cleaned_chars)
+        removed_count = len(removed_log)
+        
+        if removed_count > 0:
+            st.error(f"⚠️ تم العثور على {removed_count} رمز مخفي وتم حذفهم!", icon="🗑️")
+            
+            # عرض التفاصيل
+            st.write("### 🔍 تقرير الحذف:")
+            st.json(removed_log) # يعرض قائمة بما تم حذفه
+            
+            st.success("✅ النص النظيف:")
+            st.text_area("انسخ النص النظيف من هنا:", value=cleaned_text, height=150)
         else:
-            st.success("✅ النص سليم! لا توجد أي أحرف مخفية.", icon="🛡️")
-
-# تذييل بسيط
-st.markdown("---")
-st.caption("يعمل محلياً ولا يحفظ بياناتك.")
+            st.success("✅ النص نظيف تماماً (أو أن المتصفح قام بتنظيفه تلقائياً عند اللصق).")
+            
+            # أداة المطورين للتأكد
+            with st.expander("🛠️ عرض الكود الخام (للمبرمجين)"):
+                hex_view = " ".join([hex(ord(c)) for c in text_input])
+                st.text(hex_view)
+                st.caption("ابحث عن أكواد مثل 0x200b هنا. إذا لم تجدها، فالنص الذي وصل للموقع كان نظيفاً أصلاً.")
+    else:
+        st.warning("الرجاء لصق نص أولاً.")
