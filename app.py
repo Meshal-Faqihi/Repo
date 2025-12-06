@@ -55,48 +55,67 @@ def detect_zero_width_encoded(text):
 def advanced_cleaning(text, remove_markdown=True, normalize_unicode=True):
     stats = {
         "hidden_chars": 0,
-        "bidi": 0,
         "homoglyphs": 0,
         "encoded_zero_width": 0,
         "markdown": 0
     }
 
-    # تطبيع
-    if normalize_unicode:
-        clean_base = unicodedata.normalize("NFKC", text)
-    else:
-        clean_base = text
-
-    # فحص الهوموجليف
-    homoglyphs = detect_homoglyphs(clean_base)
-    stats["homoglyphs"] = len(homoglyphs)
-
-    # فحص ترميز مخفي داخل Zero Width
+    # 1. فحص وجود ترميز مخفي (لإحصائيات فقط)
     if detect_zero_width_encoded(text):
         stats["encoded_zero_width"] = 1
 
-    clean_text = ""
+    clean_text_builder = []
     visual_html = ""
 
+    # نستخدم النص الأصلي في الحلقة لضمان دقة التقرير البصري
     for char in text:
+        # أ. فحص الأحرف المخفية
         issue = detect_hidden_chars(char)
+        
+        # ب. فحص الهوموجليف (هل هذا الحرف مخادع؟)
+        homoglyph_fix = HOMOGLYPHS.get(char) # يرجع الحرف الأصلي أو None
+
         if issue:
+            # حالة: حرف مخفي (يجب حذفه)
             stats["hidden_chars"] += 1
-            color = "#ff4b4b"
-            visual_html += f'<span style="background:{color}; padding:2px; border-radius:4px;" title="{issue}">[{issue}]</span>'
+            visual_html += f'<span style="background:#ff4b4b; color:white; padding:1px 4px; border-radius:3px; font-size:0.8em;" title="{issue}">[{issue}]</span>'
+            # لا نضيفه لـ clean_text_builder
+            
+        elif homoglyph_fix:
+            # حالة: حرف مخادع (يجب استبداله)
+            stats["homoglyphs"] += 1
+            # في العرض نلونه بالأصفر
+            visual_html += f'<span style="background:#ffd700; color:black; padding:1px 4px; border-radius:3px;" title="تم تحويل {char} إلى {homoglyph_fix}">[{char}→{homoglyph_fix}]</span>'
+            # في التنظيف نضع الحرف الصحيح
+            clean_text_builder.append(homoglyph_fix)
+            
         else:
+            # حالة: حرف سليم
+            safe_char = char.replace("<", "&lt;").replace(">", "&gt;") # حماية HTML
             if char == "\n":
                 visual_html += "<br>"
             else:
-                visual_html += char
+                visual_html += safe_char
+            
+            clean_text_builder.append(char)
 
-        if not issue:
-            clean_text += char
+    # تجميع النص
+    clean_text = "".join(clean_text_builder)
 
-    # إزالة Markdown
+    # 2. التطبيع النهائي (Normalization)
+    # نقوم به هنا على النص النظيف لضمان توحيد الأشكال
+    if normalize_unicode:
+        clean_text = unicodedata.normalize("NFKC", clean_text)
+
+    # 3. إزالة Markdown
     if remove_markdown:
+        # إزالة Bold
         cleaned2 = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
+        # إزالة Code blocks
         cleaned2 = re.sub(r'`(.*?)`', r'\1', cleaned2)
+        # إزالة Links [text](url)
+        cleaned2 = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', cleaned2)
+        
         if cleaned2 != clean_text:
             stats["markdown"] = 1
         clean_text = cleaned2
