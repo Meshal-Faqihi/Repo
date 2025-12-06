@@ -2,47 +2,37 @@ import streamlit as st
 import unicodedata
 import re
 import html
-import time # للإيحاء بالمعالجة
-from openai import OpenAI
+import time
+import google.generativeai as genai
 
-# --- 1. إعدادات الصفحة والتصميم العام ---
+# 1. إعدادات الصفحة
 st.set_page_config(
-    page_title="Ghost Buster AI",
+    page_title="Ghost Buster Public",
     page_icon="👻",
     layout="wide",
-    initial_sidebar_state="collapsed" # القائمة مغلقة لتركيز أكبر
+    initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS احترافي جداً (Dark Mode Friendly) ---
+# 2. CSS
 st.markdown("""
 <style>
-    /* تحسين الخطوط */
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
     html, body, [class*="css"] { font-family: 'Cairo', sans-serif; }
-    
-    /* جعل الأزرار تأخذ عرض العمود بالكامل */
     .stButton button { width: 100%; border-radius: 8px; font-weight: bold; transition: all 0.3s; }
-    
-    /* صندوق النتائج (Scrollable) */
     .result-box {
         padding: 20px; border-radius: 10px; border: 1px solid #444;
         background-color: #1e1e1e; color: #e0e0e0;
         font-family: 'Courier New', monospace; white-space: pre-wrap; direction: rtl; line-height: 2;
-        max-height: 400px; overflow-y: auto; /* شريط تمرير إذا النص طويل */
-        box-shadow: inset 0 0 10px #00000050;
+        max-height: 400px; overflow-y: auto;
     }
-    
-    /* الألوان الخاصة بالتهديدات */
     .ai-phrase { background-color: rgba(255, 165, 0, 0.2); border-bottom: 2px dashed #ffa500; border-radius: 4px; padding: 2px 4px; }
-    .hidden-char { background-color: rgba(255, 75, 75, 0.6); color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8em; margin: 0 2px; box-shadow: 0 0 5px rgba(255, 75, 75, 0.4); }
+    .hidden-char { background-color: rgba(255, 75, 75, 0.6); color: white; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.8em; margin: 0 2px; }
     .homoglyph { background-color: rgba(255, 215, 0, 0.3); color: #fff; padding: 1px 4px; border: 1px solid #ffd700; border-radius: 4px; }
-    
-    /* تحسين العناوين */
-    h1 { color: #ff4b4b; text-align: center; margin-bottom: 30px; }
+    h1 { color: #4285F4; text-align: center; margin-bottom: 30px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. المنطق البرمجي (نفس المحرك القوي) ---
+# 3. المنطق
 AI_PHRASES = [
     (r"بصفتي (نموذج|ذكاء|لغوي)", "هوية AI"), (r"إذا (كنت )?تريد", "عرض خيارات"),
     (r"أقدر (أ)?نشئ لك", "عرض مساعدة"), (r"(إليك|ها هو) (النص|الكود|المثال)", "تسليم إجابة"),
@@ -78,7 +68,7 @@ def advanced_cleaning(text, remove_markdown=True, normalize_unicode=True):
         code = ord(char)
         if code in ALL_HIDDEN or (unicodedata.category(char) in EXTENDED_INVISIBLE_CATEGORIES and code not in (10, 13)):
             stats["hidden"] += 1
-            visual_html += '<span class="hidden-char">✖</span>' # رمز X بدلاً من DEL لجمالية أكثر
+            visual_html += '<span class="hidden-char">✖</span>'
         elif char in HOMOGLYPHS:
             stats["homoglyphs"] += 1
             visual_html += f'<span class="homoglyph">[{char}→{HOMOGLYPHS[char]}]</span>'
@@ -95,110 +85,86 @@ def advanced_cleaning(text, remove_markdown=True, normalize_unicode=True):
     
     return clean_text, visual_html, stats
 
-def humanize_with_ai(text, api_key):
+# --- الدالة السحرية للربط ---
+def humanize_with_gemini(text):
     try:
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "أنت محرر نصوص محترف. أعد صياغة النص ليبدو طبيعياً جداً وتخلص من رسمية الذكاء الاصطناعي."},
-                {"role": "user", "content": f"أعد صياغة هذا النص: {text}"}
-            ]
-        )
-        return response.choices[0].message.content
+        # هنا يقرأ المفتاح من المخزن السري في الموقع
+        api_key = st.secrets["GEMINI_KEY"]
+    except:
+        return "خطأ فني: لم يتم ضبط المفتاح في إعدادات الموقع."
+
+    try:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-pro')
+        
+        prompt = f"""
+        أعد صياغة النص التالي ليكون بأسلوب بشري طبيعي جداً وبسيط، وتخلص من نبرة الذكاء الاصطناعي:
+        {text}
+        """
+        response = model.generate_content(prompt)
+        return response.text
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"خطأ في الاتصال: {str(e)}"
 
-# --- 4. واجهة المستخدم (UX Design) ---
-
-# Header Section
-st.markdown("<h1>👻 Ghost Buster <span style='font-size:0.5em; color:gray'>Ultimate Edition</span></h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #888;'>المنصة الأقوى لتنظيف النصوص من البصمات الرقمية الخفية</p>", unsafe_allow_html=True)
+# 4. الواجهة
+st.markdown("<h1>👻 Ghost Buster <span style='font-size:0.5em; color:#4285F4'>Public</span></h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #888;'>أداة مجانية للجميع لتنظيف النصوص وإعادة صياغتها</p>", unsafe_allow_html=True)
 st.markdown("---")
 
-# Session State
 if 'input' not in st.session_state: st.session_state['input'] = ""
-if 'processed' not in st.session_state: st.session_state['processed'] = False
 
-# Sidebar
 with st.sidebar:
-    st.header("⚙️ لوحة التحكم")
-    st.info("قم بإعداد خيارات التنظيف هنا")
+    st.header("⚙️ خيارات")
     opt_markdown = st.toggle("إزالة Markdown", value=True)
-    opt_normalize = st.toggle("توحيد الأحرف (NFKC)", value=True)
-    
-    st.divider()
-    
-    st.subheader("🧠 الوضع البشري (Pro)")
-    user_api_key = st.text_input("OpenAI API Key", type="password", placeholder="sk-...", help="مطلوب فقط لميزة إعادة الصياغة")
-    
-    st.divider()
-    if st.button("🧪 نص للتجربة"):
-        st.session_state['input'] = "**تحذير:** بصفتي نموذج لغوي، أؤكد أن الـ Sysтem" + "\u200b" + " آمن."
+    opt_normalize = st.toggle("توحيد الأحرف", value=True)
+    st.info("الخدمة تعمل تلقائياً.")
 
-# Main Input Area
-text_input = st.text_area("الصق النص هنا:", value=st.session_state['input'], height=150, placeholder="النص المشكوك فيه...")
+text_input = st.text_area("ضع النص هنا:", value=st.session_state['input'], height=150, placeholder="ألصق النص وسنقوم نحن بالباقي...")
 
-# Action Buttons (Centered & Large)
 c1, c2, c3 = st.columns([1, 2, 1])
 with c2:
     col_a, col_b = st.columns(2)
     with col_a:
-        clean_btn = st.button("🧹 تنظيف تقني", type="secondary", use_container_width=True)
+        clean_btn = st.button("🧹 تنظيف فقط", type="secondary", use_container_width=True)
     with col_b:
-        humanize_btn = st.button("✨ تنظيف + صياغة", type="primary", use_container_width=True, disabled=not user_api_key, help="يتطلب مفتاح API")
+        humanize_btn = st.button("✨ تنظيف + صياغة", type="primary", use_container_width=True)
 
-# Processing Logic
 if text_input and (clean_btn or humanize_btn):
-    st.session_state['processed'] = True
-    
-    # Progress Bar (Visual Feedback)
-    progress_text = "جاري مسح البصمات الرقمية..."
+    progress_text = "جاري المعالجة..."
     my_bar = st.progress(0, text=progress_text)
-    
     for percent_complete in range(100):
-        time.sleep(0.005) # محاكاة سريعة
+        time.sleep(0.005)
         my_bar.progress(percent_complete + 1, text=progress_text)
     my_bar.empty()
     
-    # Core Processing
     clean_text, visual_html, stats = advanced_cleaning(text_input, opt_markdown, opt_normalize)
     final_output = clean_text
 
-    # AI Processing if requested
     if humanize_btn:
-        with st.spinner("🤖 جاري إعادة الكتابة بأسلوب بشري..."):
-            final_output = humanize_with_ai(clean_text, user_api_key)
-            if "Error" in final_output:
-                st.toast(final_output, icon="❌")
+        with st.spinner("🤖 جاري إعادة الصياغة..."):
+            final_output = humanize_with_gemini(clean_text)
+            if "خطأ" in final_output:
+                st.toast("حدث خطأ", icon="⚠️")
+                st.error(final_output)
             else:
-                st.toast("تمت إعادة الصياغة بنجاح!", icon="🎉")
+                st.toast("تمت العملية!", icon="🎉")
     else:
-        st.toast("تم التنظيف التقني بنجاح!", icon="✅")
+        st.toast("تم التنظيف!", icon="✅")
 
-    # --- Results Dashboard ---
-    st.markdown("### 📊 تقرير الفحص")
-    
-    # Metrics Row
+    st.markdown("### 📊 النتائج")
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("الحالة", "تم التنظيف", "100%", delta_color="normal")
+    m1.metric("الحالة", "تمت", "100%")
     m2.metric("رموز مخفية", stats['hidden'], delta="-removed", delta_color="inverse")
-    m3.metric("أحرف مزيفة", stats['homoglyphs'], delta="-fixed", delta_color="inverse")
-    m4.metric("بصمات AI", stats['ai_phrases'], delta="detected", delta_color="inverse")
+    m3.metric("مزيفة", stats['homoglyphs'], delta="-fixed", delta_color="inverse")
+    m4.metric("AI", stats['ai_phrases'], delta="detected", delta_color="inverse")
 
     st.markdown("<br>", unsafe_allow_html=True)
-
-    # Tabs for clearer view
-    tab_clean, tab_xray = st.tabs(["✨ النص النهائي (جاهز للنسخ)", "👁️ الأشعة السينية (X-Ray)"])
+    tab_clean, tab_xray = st.tabs(["✨ النص الجاهز", "👁️ التفاصيل"])
     
     with tab_clean:
-        st.success("يمكنك نسخ النص الآمن من الأسفل:")
-        st.code(final_output, language=None) # استخدام st.code يسهل النسخ بزر واحد
-    
+        st.code(final_output, language=None)
     with tab_xray:
-        st.info("هنا ترى ما تم حذفه أو تعديله:")
         st.markdown(f'<div class="result-box">{visual_html}</div>', unsafe_allow_html=True)
-        st.caption("الرموز الحمراء: مخفية | الصفراء: مزيفة | البرتقالية: كلمات AI")
 
 elif not text_input and (clean_btn or humanize_btn):
     st.warning("الرجاء إدخال نص أولاً!")
