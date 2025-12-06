@@ -100,5 +100,66 @@ def advanced_cleaning(text, remove_markdown=True, normalize_unicode=True):
     if normalize_unicode:
         clean_text = unicodedata.normalize("NFKC", clean_text)
 
-    # تنظيف Markdown
-    if remove_markdown:  # <--- (تم التصحيح هنا)
+    # تنظيف Markdown (تم إصلاح المسافات هنا)
+    if remove_markdown:
+        # إزالة Bold/Italic
+        cleaned2 = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
+        cleaned2 = re.sub(r'\*(.*?)\*', r'\1', cleaned2)
+        # إزالة Code blocks
+        cleaned2 = re.sub(r'`(.*?)`', r'\1', cleaned2)
+        # إزالة العناوين
+        cleaned2 = re.sub(r'^#+\s+', '', cleaned2, flags=re.MULTILINE)
+        
+        if cleaned2 != clean_text:
+            stats["markdown"] = 1
+        clean_text = cleaned2
+
+    return clean_text, visual_html, stats
+
+# --- 5. واجهة المستخدم ---
+
+# القائمة الجانبية
+with st.sidebar:
+    st.title("⚙️ الإعدادات")
+    opt_markdown = st.toggle("إزالة Markdown (مثل **العريض**)", value=True)
+    opt_normalize = st.toggle("توحيد الأحرف (Normalization)", value=True)
+    
+    st.markdown("---")
+    st.info("هذا المشروع مفتوح المصدر للتنظيف الجنائي للنصوص.")
+    
+    if st.button("تجربة نص مخادع"):
+        # نص يحتوي حرف روسي يشبه الإنجليزي + مسافة مخفية
+        st.session_state['input'] = "System Hеalth Chеck" + "\u200b" + " OK"
+
+# الواجهة الرئيسية
+st.title("🛡️ Ghost Buster | المصحح الجنائي")
+st.markdown("أداة متقدمة لكشف النصوص المخفية، الهوموجليف (الأحرف المتشابهة)، وبصمات AI.")
+
+if 'input' not in st.session_state: st.session_state['input'] = ""
+
+text_input = st.text_area("النص:", value=st.session_state['input'], height=150)
+
+if st.button("🚀 ابدأ الفحص", type="primary", use_container_width=True):
+    if text_input:
+        final_text, visual_html, stats = advanced_cleaning(text_input, opt_markdown, opt_normalize)
+        
+        # عرض العدادات
+        st.markdown("---")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("أحرف مخفية", stats['hidden_chars'], delta_color="inverse")
+        col2.metric("أحرف خادعة (Homoglyphs)", stats['homoglyphs'], delta_color="inverse")
+        col3.metric("تنسيقات Markdown", stats['markdown'])
+        col4.metric("تشفير خفي", "نعم" if stats['encoded_zero_width'] else "لا")
+
+        # التبويبات
+        tab1, tab2 = st.tabs(["👁️ تقرير الفحص (X-Ray)", "✅ النص النظيف"])
+        
+        with tab1:
+            if stats['hidden_chars'] == 0 and stats['homoglyphs'] == 0:
+                st.success("النص سليم تماماً!")
+            else:
+                st.markdown("المناطق الملونة هي التهديدات التي تم التعامل معها:")
+                st.markdown(f'<div class="result-box">{visual_html}</div>', unsafe_allow_html=True)
+        
+        with tab2:
+            st.text_area("جاهز للنسخ:", value=final_text, height=200)
