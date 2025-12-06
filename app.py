@@ -1,8 +1,30 @@
+import streamlit as st
 import unicodedata
 import re
+import html
 
-# --- 1. توسيع قائمة الأحرف المخفية ---
-# [استدلال]: قائمة تشمل جميع فئات Unicode تقريباً المرتبطة بالإخفاء
+# --- 1. إعدادات الصفحة ---
+st.set_page_config(
+    page_title="Ghost Buster Pro",
+    page_icon="🛡️",
+    layout="wide"
+)
+
+# --- 2. CSS للتصميم ---
+st.markdown("""
+<style>
+    .stTextArea textarea { font-family: 'Courier New', monospace; }
+    .result-box {
+        padding: 15px; border-radius: 8px; border: 1px solid #444;
+        background-color: #2b2b2b; color: #e0e0e0;
+        font-family: monospace; white-space: pre-wrap; direction: rtl; line-height: 1.8;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- 3. قواعد البيانات والتعاريف ---
+
+# قوائم الرموز المخفية
 EXTENDED_INVISIBLE_CATEGORIES = {"Cf", "Cc", "Cs"}
 BIDI_CONTROL = {
     0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
@@ -14,110 +36,69 @@ ZERO_WIDTH = {
 NON_BREAKING = {0x00A0, 0x180E}
 ALL_HIDDEN = ZERO_WIDTH | BIDI_CONTROL | NON_BREAKING
 
-# كشف الهوموجليف (الأحرف المتشابهة بصرياً)
-# [استدلال]: بناء قائمة بناءً على Unicode confusable characters المعروفة
+# قائمة الهوموجليف (الأحرف الخادعة)
 HOMOGLYPHS = {
     "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H",
     "О": "O", "Р": "P", "С": "C", "Т": "T", "Х": "X",
     "ɑ": "a", "ϲ": "c", "ԁ": "d", "е": "e", "і": "i", "ј": "j"
 }
 
+# --- 4. الدوال المساعدة ---
+
 def detect_hidden_chars(char):
     code = ord(char)
     category = unicodedata.category(char)
-
-    if code in ALL_HIDDEN:
-        return "HiddenChar"
-
-    if category in EXTENDED_INVISIBLE_CATEGORIES and code not in (10, 13):
-        return "UnicodeControl"
-
-    if code in BIDI_CONTROL:
-        return "BiDiSpoof"
-
+    
+    if code in ALL_HIDDEN: return "HiddenChar"
+    if category in EXTENDED_INVISIBLE_CATEGORIES and code not in (10, 13): return "UnicodeControl"
     return None
 
-def detect_homoglyphs(text):
-    found = []
-    for index, char in enumerate(text):
-        if char in HOMOGLYPHS:
-            found.append((index, char, HOMOGLYPHS[char]))
-    return found
-
 def detect_zero_width_encoded(text):
-    # [استدلال]: بعض أدوات الإخفاء ترمز البيانات بسلسلة من ZWSP / ZWNJ / ZWJ
+    # البحث عن نمط متكرر من الأحرف المخفية (بصمة رقمية)
     pattern = r"[\u200B\u200C\u200D\u2060\u2061\u2062\u2063]{8,}"
-    if re.search(pattern, text):
-        return True
+    if re.search(pattern, text): return True
     return False
 
-# نسخة محسّنة من الدالة الرئيسية
 def advanced_cleaning(text, remove_markdown=True, normalize_unicode=True):
     stats = {
-        "hidden_chars": 0,
-        "homoglyphs": 0,
-        "encoded_zero_width": 0,
-        "markdown": 0
+        "hidden_chars": 0, "homoglyphs": 0,
+        "encoded_zero_width": 0, "markdown": 0
     }
 
-    # 1. فحص وجود ترميز مخفي (لإحصائيات فقط)
+    # فحص بصمة التشفير
     if detect_zero_width_encoded(text):
         stats["encoded_zero_width"] = 1
 
     clean_text_builder = []
     visual_html = ""
 
-    # نستخدم النص الأصلي في الحلقة لضمان دقة التقرير البصري
+    # المعالجة حرفاً بحرف
     for char in text:
-        # أ. فحص الأحرف المخفية
         issue = detect_hidden_chars(char)
-        
-        # ب. فحص الهوموجليف (هل هذا الحرف مخادع؟)
-        homoglyph_fix = HOMOGLYPHS.get(char) # يرجع الحرف الأصلي أو None
+        homoglyph_fix = HOMOGLYPHS.get(char)
 
         if issue:
-            # حالة: حرف مخفي (يجب حذفه)
             stats["hidden_chars"] += 1
-            visual_html += f'<span style="background:#ff4b4b; color:white; padding:1px 4px; border-radius:3px; font-size:0.8em;" title="{issue}">[{issue}]</span>'
-            # لا نضيفه لـ clean_text_builder
-            
+            # تمييز الحذف باللون الأحمر
+            visual_html += f'<span style="background:rgba(255, 75, 75, 0.4); color:#ff6b6b; padding:0 3px; border-radius:3px; font-size:0.8em;" title="{issue}">[DEL]</span>'
+        
         elif homoglyph_fix:
-            # حالة: حرف مخادع (يجب استبداله)
             stats["homoglyphs"] += 1
-            # في العرض نلونه بالأصفر
-            visual_html += f'<span style="background:#ffd700; color:black; padding:1px 4px; border-radius:3px;" title="تم تحويل {char} إلى {homoglyph_fix}">[{char}→{homoglyph_fix}]</span>'
-            # في التنظيف نضع الحرف الصحيح
+            # تمييز الاستبدال باللون الأصفر
+            visual_html += f'<span style="background:rgba(255, 215, 0, 0.3); color:#ffd700; padding:0 3px; border-radius:3px;" title="تم تحويل {char} إلى {homoglyph_fix}">[{char}→{homoglyph_fix}]</span>'
             clean_text_builder.append(homoglyph_fix)
             
         else:
-            # حالة: حرف سليم
-            safe_char = char.replace("<", "&lt;").replace(">", "&gt;") # حماية HTML
-            if char == "\n":
-                visual_html += "<br>"
-            else:
-                visual_html += safe_char
-            
+            # حرف سليم
+            safe_char = html.escape(char).replace("\n", "<br>")
+            visual_html += safe_char
             clean_text_builder.append(char)
 
-    # تجميع النص
     clean_text = "".join(clean_text_builder)
 
-    # 2. التطبيع النهائي (Normalization)
-    # نقوم به هنا على النص النظيف لضمان توحيد الأشكال
+    # التطبيع النهائي
     if normalize_unicode:
         clean_text = unicodedata.normalize("NFKC", clean_text)
 
-    # 3. إزالة Markdown
-    if remove_markdown:
-        # إزالة Bold
-        cleaned2 = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
-        # إزالة Code blocks
-        cleaned2 = re.sub(r'`(.*?)`', r'\1', cleaned2)
-        # إزالة Links [text](url)
-        cleaned2 = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', cleaned2)
-        
-        if cleaned2 != clean_text:
-            stats["markdown"] = 1
-        clean_text = cleaned2
-
-    return clean_text, visual_html, stats
+    # تنظيف Markdown
+    if remove_markdown
