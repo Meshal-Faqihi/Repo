@@ -85,27 +85,39 @@ def advanced_cleaning(text, remove_markdown=True, normalize_unicode=True):
     
     return clean_text, visual_html, stats
 
-# --- الدالة السحرية للربط (تم التحديث هنا) ---
+# --- الدالة الذكية للربط (Smart Auto-Fallback) ---
 def humanize_with_gemini(text):
     try:
         api_key = st.secrets["GEMINI_KEY"]
     except:
         return "خطأ فني: لم يتم ضبط مفتاح API في إعدادات الموقع."
 
-    try:
-        genai.configure(api_key=api_key)
-        
-        # --- التحديث: استخدام الموديل الجديد ---
-        model = genai.GenerativeModel('gemini-1.5-flash') 
-        
-        prompt = f"""
-        أعد صياغة النص التالي ليكون بأسلوب بشري طبيعي جداً وبسيط، وتخلص من نبرة الذكاء الاصطناعي:
-        {text}
-        """
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        return f"خطأ في الاتصال: {str(e)}"
+    genai.configure(api_key=api_key)
+    
+    # قائمة الموديلات التي سنجربها بالترتيب
+    models_to_try = [
+        'gemini-1.5-flash',
+        'gemini-1.5-pro',
+        'gemini-1.0-pro',
+        'gemini-pro'
+    ]
+    
+    prompt = f"أعد صياغة النص التالي ليكون بأسلوب بشري طبيعي جداً وبسيط وتخلص من نبرة الذكاء الاصطناعي:\n{text}"
+    
+    last_error = ""
+    
+    # حلقة تكرار لتجربة الموديلات
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            return response.text # إذا نجح، نرجع النتيجة ونخرج
+        except Exception as e:
+            last_error = str(e)
+            continue # إذا فشل، نجرب الموديل التالي
+            
+    # إذا فشلت كل الموديلات
+    return f"فشل الاتصال بجميع النماذج. الخطأ الأخير: {last_error}"
 
 # 4. الواجهة
 st.markdown("<h1>👻 Ghost Buster <span style='font-size:0.5em; color:#4285F4'>Public</span></h1>", unsafe_allow_html=True)
@@ -144,7 +156,7 @@ if text_input and (clean_btn or humanize_btn):
     if humanize_btn:
         with st.spinner("🤖 جاري إعادة الصياغة (قد تستغرق لحظات)..."):
             final_output = humanize_with_gemini(clean_text)
-            if "خطأ" in final_output:
+            if "خطأ" in final_output or "فشل" in final_output:
                 st.toast("حدث خطأ في الخدمة", icon="⚠️")
                 st.error(final_output)
             else:
