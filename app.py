@@ -101,4 +101,4 @@ def advanced_cleaning(text, remove_markdown=True, normalize_unicode=True):
         clean_text = unicodedata.normalize("NFKC", clean_text)
 
     # تنظيف Markdown
-    if remove_markdown
+    if remove_markdown:  # <--- (تم التصحيح هنا)
