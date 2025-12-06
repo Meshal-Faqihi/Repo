@@ -1,124 +1,53 @@
 import streamlit as st
 import google.generativeai as genai
-import re
-import unicodedata
+import importlib.metadata
 
-# 1. إعداد الصفحة
-st.set_page_config(page_title="Ghost Buster AI", layout="wide")
+st.set_page_config(page_title="Debug Mode", layout="wide")
 
-# 2. التنسيق
-st.markdown("""
-<style>
-    .stTextArea textarea { direction: rtl; }
-    div[data-testid="stMetricValue"] { font-size: 20px; }
-</style>
-""", unsafe_allow_html=True)
+st.title("🛠️ فحص حالة الاتصال (Debug)")
 
-# 3. دوال التنظيف الأساسية
-def clean_text_logic(text):
-    # إزالة الرموز المخفية
-    invisible_chars = [
-        0x200B, 0x200C, 0x200D, 0xFEFF, 0x2060, 
-        0x2061, 0x2062, 0x2063, 0x2064, 0x202A, 
-        0x202B, 0x202C, 0x202D, 0x202E
-    ]
-    cleaned = ""
-    hidden_count = 0
+# 1. طباعة إصدار المكتبة (مهم جداً لمعرفة هل التحديث تم أم لا)
+try:
+    version = importlib.metadata.version("google-generativeai")
+    st.info(f"📦 إصدار مكتبة جوجل الحالي: {version}")
     
-    for char in text:
-        if ord(char) in invisible_chars or (unicodedata.category(char) in ['Cf'] and ord(char) not in [10, 13]):
-            hidden_count += 1
-        else:
-            cleaned += char
+    # تحذير إذا كانت المكتبة قديمة
+    if version < "0.7.0":
+        st.error("⚠️ المكتبة قديمة جداً! المشكلة في ملف requirements.txt لم يتم تطبيقه.")
+    else:
+        st.success("✅ إصدار المكتبة حديث وممتاز.")
+except:
+    st.warning("تعذر قراءة الإصدار.")
+
+# 2. فحص المفتاح والنماذج
+user_key = st.text_input("ضع مفتاح API هنا للفحص:", type="password")
+
+if st.button("🚀 افحص المفتاح والنماذج"):
+    if not user_key:
+        st.error("الرجاء وضع المفتاح.")
+    else:
+        try:
+            genai.configure(api_key=user_key)
             
-    # إزالة المارك داون
-    cleaned = re.sub(r'\*\*(.*?)\*\*', r'\1', cleaned)
-    
-    return cleaned, hidden_count
-
-# 4. دالة الذكاء الاصطناعي (التي كانت تسبب المشاكل)
-def ai_rewrite(text, api_key):
-    if not api_key:
-        return "⚠️ الرجاء وضع مفتاح API أولاً."
-        
-    try:
-        genai.configure(api_key=api_key)
-        
-        # قائمة الموديلات التي سنجربها بالترتيب
-        models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
-        
-        # محاولة الاتصال بأول موديل متاح
-        active_model = None
-        for m in models:
-            try:
-                test_model = genai.GenerativeModel(m)
-                # تجربة وهمية للتأكد من الموديل
-                test_model.generate_content("test")
-                active_model = m
-                break
-            except:
-                continue
-        
-        if not active_model:
-            return "❌ فشل العثور على موديل يعمل. تأكد من المفتاح."
-
-        # التنفيذ الفعلي
-        model = genai.GenerativeModel(active_model)
-        response = model.generate_content(f"أعد صياغة هذا النص بأسلوب بشري طبيعي جداً:\n{text}")
-        return response.text
-        
-    except Exception as e:
-        return f"خطأ غير متوقع: {str(e)}"
-
-# --- الواجهة ---
-st.title("👻 Ghost Buster (النسخة المستقرة)")
-
-# القائمة الجانبية للمفتاح
-with st.sidebar:
-    st.header("الإعدادات")
-    # محاولة قراءة المفتاح من الأسرار، وإذا لم يوجد نطلب إدخاله يدوياً
-    try:
-        default_key = st.secrets["GEMINI_KEY"]
-        key_status = "✅ المفتاح مربوط من السيرفر"
-    except:
-        default_key = ""
-        key_status = "⚠️ المفتاح غير مربوط"
-        
-    st.info(key_status)
-    
-    # مربع إدخال احتياطي (في حال فشل الأسرار)
-    user_key = st.text_input("مفتاح API (احتياطي):", value=default_key, type="password")
-
-text_input = st.text_area("ضع النص هنا:", height=150)
-
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("🧹 تنظيف فقط", use_container_width=True):
-        if text_input:
-            final, count = clean_text_logic(text_input)
-            st.success("تم التنظيف")
-            st.metric("رموز محذوفة", count)
-            st.code(final, language=None)
-        else:
-            st.warning("ادخل نصاً أولاً")
-
-with col2:
-    if st.button("✨ تنظيف + صياغة AI", type="primary", use_container_width=True):
-        if text_input and user_key:
-            # أولاً ننظف
-            cleaned_draft, _ = clean_text_logic(text_input)
+            st.write("جاري الاتصال بسيرفرات جوجل...")
             
-            with st.spinner("جاري الاتصال بـ Google AI..."):
-                result = ai_rewrite(cleaned_draft, user_key)
-                
-            if "خطأ" in result or "فشل" in result:
-                st.error(result)
+            # محاولة جلب النماذج المتاحة لهذا المفتاح
+            models = []
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    models.append(m.name)
+            
+            if models:
+                st.success(f"🎉 نجح الاتصال! المفتاح سليم.")
+                st.write("### النماذج التي يدعمها مفتاحك حالياً:")
+                st.code("\n".join(models))
+                st.balloons()
             else:
-                st.success("النتيجة النهائية:")
-                st.write(result)
-                st.code(result, language=None)
-        elif not user_key:
-            st.error("يجب توفر مفتاح API للعمل.")
-        else:
-            st.warning("ادخل نصاً أولاً")
+                st.warning("المفتاح يعمل لكن لم نجد نماذج تدعم النصوص! (غريب)")
+                
+        except Exception as e:
+            st.error("❌ فشل الاتصال. تفاصيل الخطأ:")
+            st.code(str(e))
+            
+            if "400" in str(e) or "INVALID_ARGUMENT" in str(e):
+                st.warning("💡 هذا يعني غالباً أن المفتاح منسوخ بشكل خاطئ أو يحتوي مسافات.")
