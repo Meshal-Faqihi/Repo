@@ -82,14 +82,12 @@ def advanced_cleaning(text, remove_markdown=True, normalize_unicode=True):
     
     if normalize_unicode: clean_text = unicodedata.normalize("NFKC", clean_text)
     
-    # --- تصحيح خطأ المسافة (Indentation Fix) ---
     if remove_markdown:
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
-    # ------------------------------------------
     
     return clean_text, visual_html, stats
 
-# --- الدالة الذكية (تم تحديث الأسماء بناءً على صورتك) ---
+# --- الدالة الذكية (تم تحديث القائمة بناءً على صورتك) ---
 def humanize_with_gemini(text):
     try:
         api_key = st.secrets["GEMINI_KEY"]
@@ -98,12 +96,13 @@ def humanize_with_gemini(text):
 
     genai.configure(api_key=api_key)
     
-    # هذه القائمة مأخوذة من الصورة التي أرسلتها أنت (مضمونة 100%)
+    # هذه القائمة مأخوذة حرفياً من صورة الفحص التي أرسلتها (image_2611fd.png)
     models_to_try = [
-        'gemini-1.5-flash',       # هذا موجود في قائمتك
-        'gemini-2.0-flash-exp',   # وهذا أيضاً موجود وجديد جداً
-        'gemini-1.5-pro',
-        'models/gemini-1.5-flash' # صيغة بديلة احتياطية
+        'gemini-2.0-flash',        # الأولوية الأولى
+        'gemini-2.0-flash-exp',    # نسخة تجريبية سريعة
+        'gemini-2.5-flash',        # النسخة الأحدث التي ظهرت عندك
+        'models/gemini-2.0-flash', # في حال طلب المسار الكامل
+        'models/gemini-2.5-flash'
     ]
     
     prompt = f"أعد صياغة النص التالي ليكون بأسلوب بشري طبيعي جداً وبسيط وتخلص من نبرة الذكاء الاصطناعي:\n{text}"
@@ -119,7 +118,7 @@ def humanize_with_gemini(text):
             last_error = str(e)
             continue
             
-    return f"فشل الاتصال. الخطأ الأخير: {last_error}"
+    return f"فشل الاتصال بجميع النماذج. الخطأ الأخير: {last_error}"
 
 # --- 4. واجهة المستخدم ---
 st.markdown("<h1>👻 Ghost Buster <span style='font-size:0.5em; color:#4285F4'>Public</span></h1>", unsafe_allow_html=True)
