@@ -1,137 +1,196 @@
 import streamlit as st
 import unicodedata
+import re
+import html
 
-# إعدادات الصفحة العامة
+# --- 1. إعدادات الصفحة المتقدمة ---
 st.set_page_config(
-    page_title="Deep Clean | منظف النصوص",
-    page_icon="🛡️",
+    page_title="Ghost Buster | كاشف النصوص العميق",
+    page_icon="👻",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- CSS  ---
+# --- 2. CSS احترافي (Dark Mode Friendly) ---
 st.markdown("""
 <style>
-    .big-font { font-size:20px !important; font-weight: bold; }
-    .stTextArea textarea { font-family: 'Courier New', monospace; }
-    .highlight { background-color: #ff4b4b40; border-radius: 4px; padding: 0 4px; font-weight: bold; color: #ff4b4b; }
+    /* تحسين الخطوط */
+    .stTextArea textarea { font-family: 'Courier New', monospace; line-height: 1.6; }
+    
+    /* صناديق النتائج */
+    .result-box {
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #444;
+        background-color: #1e1e1e;
+        color: #e0e0e0;
+        font-family: monospace;
+        white-space: pre-wrap;
+        direction: rtl; /* لدعم العربية */
+    }
+    
+    /* تمييز الحذف */
+    .removed-tag {
+        background-color: rgba(255, 75, 75, 0.3);
+        color: #ff4b4b;
+        padding: 0 4px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 0.8em;
+        border: 1px solid #ff4b4b;
+    }
+    
+    /* الفوتر */
+    .footer { text-align: center; color: #666; font-size: 12px; margin-top: 50px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- (Logic) ---
-INVISIBLE_CHARS = {
-    0x200B, 0x200C, 0x200D, 0x200E, 0x200F, 0xFEFF,
-    0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
-    0x2060, 0x2061, 0x2062, 0x2063, 0x2064
+# --- 3. محرك المعالجة (The Core Engine) ---
+
+# قائمة الرموز المحظورة الصريحة
+BLACKLIST_CHARS = {
+    0x200B, 0x200C, 0x200D, 0x200E, 0x200F, 0xFEFF, # Zero Width & Marks
+    0x202A, 0x202B, 0x202C, 0x202D, 0x202E, # Directional Overrides
+    0x2060, 0x2061, 0x2062, 0x2063, 0x2064, # Invisible Separators
+    0x00A0, # Non-breaking space (يسبب مشاكل برمجية)
 }
 
-def is_hidden(char):
+def identify_char(char):
+    """تحديد نوع الحرف المشبوه بدقة"""
     code = ord(char)
-    if code in INVISIBLE_CHARS: return True
-    category = unicodedata.category(char)
-    if category == 'Cf': return True
-    if category == 'Cc' and char not in ['\n', '\t', '\r']: return True
-    return False
+    if code == 0x200B: return "ZWSP"
+    if code == 0x200E: return "LRM"
+    if code == 0x200F: return "RLM"
+    if code == 0x00A0: return "NBSP"
+    if code == 0xFEFF: return "BOM"
+    return "HIDDEN"
 
-def get_char_label(char):
-    code = ord(char)
-    labels = {
-        0x200B: "ZWSP", 0x200E: "LRM", 0x200F: "RLM",
-        0x200C: "ZWNJ", 0x200D: "ZWJ"
-    }
-    return labels.get(code, "HIDDEN")
-
-def process_text(text):
+def advanced_cleaning(text, remove_markdown=False, normalize_unicode=True):
+    """
+    الدالة الشاملة للتنظيف
+    """
     clean_chars = []
-    visual_html = ""
-    removed_stats = {}
-    total_removed = 0
+    visual_report = ""
+    stats = {"hidden": 0, "markdown": 0, "normalized": 0}
+    
+    # 1. مرحلة التطبيع (Normalization)
+    # تحويل الأحرف "الشبيهة" إلى أصلها القياسي
+    if normalize_unicode:
+        # NFKC يوحد الأشكال المختلفة للأحرف
+        text = unicodedata.normalize('NFKC', text)
 
+    # 2. معالجة النص حرفاً حرفاً
     for char in text:
-        if is_hidden(char):
-            # للإحصائيات
-            label = get_char_label(char)
-            removed_stats[label] = removed_stats.get(label, 0) + 1
-            total_removed += 1
-            # للعرض البصري (تمييز الحذف)
-            visual_html += f'<span class="highlight" title="تم حذف {label}">[{label}]</span>'
+        code = ord(char)
+        category = unicodedata.category(char)
+        
+        # شرط الحذف: هل هو في القائمة السوداء أو تنسيق غير مرئي؟
+        is_bad = (code in BLACKLIST_CHARS) or (category in ['Cf', 'Cc'] and char not in ['\n', '\t', '\r'])
+        
+        if is_bad:
+            label = identify_char(char)
+            stats["hidden"] += 1
+            # إضافة وسم أحمر للعرض
+            visual_report += f'<span class="removed-tag" title="تم حذف {label}">[{label}]</span>'
         else:
             clean_chars.append(char)
-            # تعقيم النص للعرض في HTML لتجنب مشاكل XSS
-            safe_char = char.replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
-            visual_html += safe_char
+            # تعقيم HTML للعرض
+            safe_char = html.escape(char).replace("\n", "<br>")
+            visual_report += safe_char
 
-    return "".join(clean_chars), visual_html, total_removed, removed_stats
+    # تجميع النص الأولي
+    cleaned_string = "".join(clean_chars)
 
-# --- (Sidebar) ---
+    # 3. إزالة آثار الذكاء الاصطناعي (Markdown)
+    if remove_markdown:
+        # إزالة العريض **text**
+        new_text = re.sub(r'\*\*(.*?)\*\*', r'\1', cleaned_string)
+        if new_text != cleaned_string: stats["markdown"] += 1
+        cleaned_string = new_text
+        
+        # إزالة العناوين ## 
+        new_text = re.sub(r'^#{1,6}\s+', '', cleaned_string, flags=re.MULTILINE)
+        if new_text != cleaned_string: stats["markdown"] += 1
+        cleaned_string = new_text
+        
+        # إزالة الكود `code`
+        cleaned_string = re.sub(r'`(.*?)`', r'\1', cleaned_string)
+
+    return cleaned_string, visual_report, stats
+
+# --- 4. واجهة الشريط الجانبي (Sidebar) ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2092/2092663.png", width=80)
-    st.title("Deep Clean Tool")
-    st.markdown("---")
-    st.markdown("""
-    **عن الأداة:**
-    هذه الأداة تقوم بتحليل النصوص بعمق لإزالة:
-    - 🕵️‍♂️ الأحرف غير المرئية (Zero-width spaces).
-    - 🔄 علامات توجيه النص (LRM/RLM).
-    - 🧹 بقايا التنسيق المنسوخة.
-    """)
-    st.markdown("---")
-    st.info("💡 **نصيحة:** استخدم هذه الأداة قبل نشر المنشورات في وسائل التواصل أو إرسال الأكواد البرمجية.")
+    st.title("⚙️ إعدادات التنظيف")
     
-    # خيار توليد نص للتجربة 
-    if st.button("توليد نص ملغّم للتجربة"):
-        st.session_state['input_text'] = "هذا النص​ يبدو طبيعياً جداً،‏ لكنه في الحقيقة​ يحتوي على‎ رموز مخفية لا تراها عينك!"
+    st.markdown("### مستوى الصرامة")
+    opt_markdown = st.toggle("إزالة تنسيقات AI (Markdown)", value=True, help="يزيل النجوم ** والعناوين التي يضعها ChatGPT")
+    opt_normalize = st.toggle("تطبيع الأحرف (Normalization)", value=True, help="يحول الأحرف الغريبة والمزخرفة إلى أحرف قياسية")
+    
+    st.markdown("---")
+    st.markdown("### 🧪 منطقة التجارب")
+    if st.button("توليد نص خبيث للتجربة"):
+        # نص يحتوي: مسافات صفرية + Markdown + مسافة غير منقطعة
+        st.session_state['input_text'] = "**تحذير:**" + "\u200b" + " هذا النص " + "\u00A0" + "ملغم" + "\u200f" + "!"
 
-# --- (Main UI) ---
-st.title("🛡️ كاشف ومنظف النصوص الاحترافي")
-st.caption("احمِ خصوصيتك وتخلص من العلامات المائية المخفية في النصوص.")
+# --- 5. الواجهة الرئيسية (Main UI) ---
+st.title("👻 Ghost Buster | قاهر النصوص الخفية")
+st.markdown("""
+<div style="background-color:#262730; padding:10px; border-radius:5px; border-left: 5px solid #ff4b4b;">
+    هذه الأداة تكشف <b>البصمات الرقمية</b> التي تتركها نماذج الذكاء الاصطناعي والمواقع، وتجعلك تنسخ نصاً "نظيفاً برمجياً".
+</div>
+""", unsafe_allow_html=True)
 
-# منطقة الإدخال
-if 'input_text' not in st.session_state:
-    st.session_state['input_text'] = ""
+if 'input_text' not in st.session_state: st.session_state['input_text'] = ""
 
-text_input = st.text_area(
-    "1️⃣ الصق النص المراد فحصه هنا:",
-    value=st.session_state['input_text'],
-    height=150,
-    placeholder="الصق النص هنا..."
-)
+col_input, col_action = st.columns([4, 1])
+with col_input:
+    text_input = st.text_area("النص الأصلي:", value=st.session_state['input_text'], height=150, placeholder="الصق النص المشكوك فيه هنا...")
 
-# زر التنفيذ 
-if st.button("🚀 فحص وتنظيف النص", type="primary", use_container_width=True):
-    if text_input:
-        clean_text, visual_html, count, stats = process_text(text_input)
-        
-        st.markdown("---")
-        
-        if count > 0:
-            # عرض الإحصائيات
-            c1, c2, c3 = st.columns(3)
-            with c1: st.metric("حالة النص", "ملوث ⚠️", delta_color="inverse")
-            with c2: st.metric("عدد الأحرف المخفية", f"{count}", delta="-"+str(count))
-            with c3: st.metric("الطول الجديد", len(clean_text))
-            
-            st.markdown("### 📊 النتائج التفصيلية")
-            
-            # استخدام التبويبات لعرض النتائج
-            tab1, tab2, tab3 = st.tabs(["👁️ المعاينة البصرية", "✅ النص النظيف", "📈 التقرير التقني"])
-            
-            with tab1:
-                st.markdown("المناطق الملونة بالأحمر هي ما تم حذفه:")
-                st.markdown(f'<div style="background:white; color:black; padding:15px; border-radius:10px; border:1px solid #ddd; direction:rtl;">{visual_html}</div>', unsafe_allow_html=True)
-                
-            with tab2:
-                st.success("تم التنظيف بنجاح! يمكنك النسخ الآن:")
-                st.text_area("النص النهائي:", value=clean_text, height=150, label_visibility="collapsed")
-            
-            with tab3:
-                st.write("أنواع الرموز التي تم كشفها:")
-                st.json(stats)
-                
+with col_action:
+    st.write("##") # Spacer
+    process_btn = st.button("🔍 فحص\nشامل", type="primary", use_container_width=True)
+
+# --- 6. عرض النتائج ---
+if process_btn and text_input:
+    # المعالجة
+    final_text, visual_html, stats = advanced_cleaning(text_input, opt_markdown, opt_normalize)
+    total_issues = stats["hidden"] + stats["markdown"]
+
+    st.markdown("---")
+    
+    # لوحة القيادة (Dashboard)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        status_color = "inverse" if total_issues > 0 else "normal"
+        status_text = "⚠️ ملوث" if total_issues > 0 else "✅ نظيف"
+        st.metric("الحالة الأمنية", status_text, delta_color=status_color)
+    with c2: st.metric("أحرف مخفية", stats["hidden"], delta="-removed")
+    with c3: st.metric("تنسيقات AI", stats["markdown"], delta="-stripped")
+    with c4: st.metric("عدد الأحرف النهائي", len(final_text))
+
+    # منطقة التفاصيل (Tabs)
+    tab1, tab2, tab3 = st.tabs(["🔴 كشف المستور (X-Ray)", "✨ النص النظيف (للنسخ)", "💻 الكود الخام (Hex)"])
+
+    with tab1:
+        st.markdown("##### ما تراه الأداة ولا تراه عينك:")
+        if total_issues == 0:
+            st.success("النص سليم 100% ولا يحتوي على أي شوائب.")
         else:
-            st.success("✅ النص سليم ونظيف تماماً! لا توجد أي بيانات مخفية.", icon="🎉")
-            st.balloons()
-            
-    else:
-        st.warning("الرجاء إدخال نص أولاً للبدء.")
+            st.caption("الرموز الحمراء هي بيانات وصفية تم كشفها:")
+            st.markdown(f'<div class="result-box">{visual_html}</div>', unsafe_allow_html=True)
 
+    with tab2:
+        st.markdown("##### النسخة الآمنة الجاهزة للاستخدام:")
+        st.text_area("انسخ من هنا:", value=final_text, height=200, label_visibility="collapsed")
+        # زر نسخ مساعد
+        st.caption("اضغط Ctrl+A ثم Ctrl+C لنسخ النص.")
+
+    with tab3:
+        st.markdown("##### تحليل البيانات الخام (Hex Dump):")
+        # عرض الكود الست عشري للمحترفين
+        hex_data = " ".join([f"{ord(c):04X}" for c in text_input[:100]]) + "..."
+        st.code(hex_data, language="text")
+        st.caption("هذا يعرض أول 100 حرف بصيغة Unicode Hex.")
+
+st.markdown("---")
+st.markdown('<div class="footer">Developed for Security Research • Runs Locally in Memory</div>', unsafe_allow_html=True)
