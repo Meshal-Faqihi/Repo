@@ -85,17 +85,18 @@ def advanced_cleaning(text, remove_markdown=True, normalize_unicode=True):
     
     return clean_text, visual_html, stats
 
-# --- الدالة السحرية للربط ---
+# --- الدالة السحرية للربط (تم التحديث هنا) ---
 def humanize_with_gemini(text):
     try:
-        # هنا يقرأ المفتاح من المخزن السري في الموقع
         api_key = st.secrets["GEMINI_KEY"]
     except:
-        return "خطأ فني: لم يتم ضبط المفتاح في إعدادات الموقع."
+        return "خطأ فني: لم يتم ضبط مفتاح API في إعدادات الموقع."
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
+        
+        # --- التحديث: استخدام الموديل الجديد ---
+        model = genai.GenerativeModel('gemini-1.5-flash') 
         
         prompt = f"""
         أعد صياغة النص التالي ليكون بأسلوب بشري طبيعي جداً وبسيط، وتخلص من نبرة الذكاء الاصطناعي:
@@ -141,13 +142,13 @@ if text_input and (clean_btn or humanize_btn):
     final_output = clean_text
 
     if humanize_btn:
-        with st.spinner("🤖 جاري إعادة الصياغة..."):
+        with st.spinner("🤖 جاري إعادة الصياغة (قد تستغرق لحظات)..."):
             final_output = humanize_with_gemini(clean_text)
             if "خطأ" in final_output:
-                st.toast("حدث خطأ", icon="⚠️")
+                st.toast("حدث خطأ في الخدمة", icon="⚠️")
                 st.error(final_output)
             else:
-                st.toast("تمت العملية!", icon="🎉")
+                st.toast("تمت الصياغة!", icon="🎉")
     else:
         st.toast("تم التنظيف!", icon="✅")
 
