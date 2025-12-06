@@ -3,194 +3,202 @@ import unicodedata
 import re
 import html
 
-# --- 1. إعدادات الصفحة المتقدمة ---
+# --- 1. إعدادات الصفحة ---
 st.set_page_config(
-    page_title="Ghost Buster | كاشف النصوص العميق",
+    page_title="Ghost Buster v2.0 | كاشف الذكاء الاصطناعي",
     page_icon="👻",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 2. CSS احترافي (Dark Mode Friendly) ---
+# --- 2. CSS مخصص (الألوان: أحمر للمخفي، برتقالي للكلام الآلي) ---
 st.markdown("""
 <style>
-    /* تحسين الخطوط */
     .stTextArea textarea { font-family: 'Courier New', monospace; line-height: 1.6; }
     
-    /* صناديق النتائج */
     .result-box {
-        padding: 15px;
-        border-radius: 8px;
-        border: 1px solid #444;
-        background-color: #1e1e1e;
-        color: #e0e0e0;
-        font-family: monospace;
-        white-space: pre-wrap;
-        direction: rtl; /* لدعم العربية */
+        padding: 15px; border-radius: 8px; border: 1px solid #444;
+        background-color: #1e1e1e; color: #e0e0e0;
+        font-family: monospace; white-space: pre-wrap; direction: rtl;
     }
     
-    /* تمييز الحذف */
-    .removed-tag {
-        background-color: rgba(255, 75, 75, 0.3);
-        color: #ff4b4b;
-        padding: 0 4px;
-        border-radius: 4px;
-        font-weight: bold;
-        font-size: 0.8em;
-        border: 1px solid #ff4b4b;
+    /* ستايل الأحرف المخفية (تقني) */
+    .hidden-char {
+        background-color: rgba(255, 75, 75, 0.3); color: #ff4b4b;
+        padding: 0 4px; border-radius: 4px; border: 1px solid #ff4b4b; font-weight: bold;
     }
     
-    /* الفوتر */
+    /* ستايل جمل الذكاء الاصطناعي (لغوي) */
+    .ai-phrase {
+        background-color: rgba(255, 165, 0, 0.3); color: #ffa500;
+        padding: 0 4px; border-radius: 4px; border: 1px dashed #ffa500; font-weight: bold;
+    }
+    
     .footer { text-align: center; color: #666; font-size: 12px; margin-top: 50px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. محرك المعالجة (The Core Engine) ---
+# --- 3. قواعد البيانات (Patterns DB) ---
 
-# قائمة الرموز المحظورة الصريحة
+# قائمة الرموز المخفية (التقنية)
 BLACKLIST_CHARS = {
-    0x200B, 0x200C, 0x200D, 0x200E, 0x200F, 0xFEFF, # Zero Width & Marks
-    0x202A, 0x202B, 0x202C, 0x202D, 0x202E, # Directional Overrides
-    0x2060, 0x2061, 0x2062, 0x2063, 0x2064, # Invisible Separators
-    0x00A0, # Non-breaking space (يسبب مشاكل برمجية)
+    0x200B, 0x200C, 0x200D, 0x200E, 0x200F, 0xFEFF, 
+    0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
+    0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0x00A0
 }
 
+# قائمة جمل الذكاء الاصطناعي (اللغوية - Regex)
+AI_PHRASES = [
+    # العربية
+    (r"بصفتي (نموذج|ذكاء|لغوي)", "هوية AI"),
+    (r"إذا (كنت )?تريد", "عرض خيارات"),
+    (r"أقدر (أ)?نشئ لك", "عرض مساعدة"),
+    (r"(إليك|ها هو) (النص|الكود|المثال)", "تسليم إجابة"),
+    (r"لا تتردد في (سؤالي|طلب)", "خاتمة AI"),
+    (r"أنا مجرد برنامج", "تصلب هوية"),
+    (r"بناءً على معلوماتي", "تحفظ معرفي"),
+    # English
+    (r"As an AI language model", "AI Identity"),
+    (r"If you (want|need)", "Offering Help"),
+    (r"Here is (the|a)", "Delivering Answer"),
+    (r"Feel free to ask", "AI Closing"),
+    (r"I cannot (fulfill|generate)", "Refusal"),
+]
+
+# --- 4. دوال المعالجة ---
+
 def identify_char(char):
-    """تحديد نوع الحرف المشبوه بدقة"""
     code = ord(char)
     if code == 0x200B: return "ZWSP"
     if code == 0x200E: return "LRM"
     if code == 0x200F: return "RLM"
     if code == 0x00A0: return "NBSP"
-    if code == 0xFEFF: return "BOM"
     return "HIDDEN"
 
-def advanced_cleaning(text, remove_markdown=False, normalize_unicode=True):
+def scan_ai_speech(text):
     """
-    الدالة الشاملة للتنظيف
+    دالة جديدة: تفحص النص بحثاً عن "كليشيهات" الذكاء الاصطناعي
     """
-    clean_chars = []
-    visual_report = ""
-    stats = {"hidden": 0, "markdown": 0, "normalized": 0}
+    found_patterns = []
+    # ننسخ النص لنضع عليه العلامات لاحقاً
+    marked_text = text 
     
-    # 1. مرحلة التطبيع (Normalization)
-    # تحويل الأحرف "الشبيهة" إلى أصلها القياسي
-    if normalize_unicode:
-        # NFKC يوحد الأشكال المختلفة للأحرف
-        text = unicodedata.normalize('NFKC', text)
+    for pattern, label in AI_PHRASES:
+        # البحث عن الجملة
+        matches = list(re.finditer(pattern, text, re.IGNORECASE))
+        for match in matches:
+            phrase = match.group()
+            found_patterns.append(label)
+            # استبدال الجملة في النص "المعروض" فقط بوسم HTML ملون
+            # نستخدم دالة lambda لتجنب استبدال ما تم استبداله سابقاً بشكل خاطئ
+            # (هنا تبسيط للكود، في المشاريع الكبيرة نستخدم Tokenizer)
+            replacement = f'<span class="ai-phrase" title="نمط AI: {label}">{phrase}</span>'
+            marked_text = marked_text.replace(phrase, replacement)
+            
+    return marked_text, len(found_patterns)
 
-    # 2. معالجة النص حرفاً حرفاً
-    for char in text:
+def advanced_cleaning(text, remove_markdown=True, normalize_unicode=True):
+    # 1. تحليل لغوي (AI Speech)
+    text_with_ai_marks, ai_count = scan_ai_speech(text)
+    
+    # 2. تحليل تقني (Hidden Chars)
+    clean_chars = []
+    visual_report_parts = [] # سنعيد بناء النص للعرض
+    
+    stats = {"hidden": 0, "markdown": 0, "ai_speech": ai_count}
+    
+    # تطبيع النص (Normalize)
+    if normalize_unicode:
+        # ملاحظة: التطبيع يتم على النص الخام للتنظيف، لكننا نحتفظ بالنص الملون للعرض
+        text_for_cleaning = unicodedata.normalize('NFKC', text)
+    else:
+        text_for_cleaning = text
+
+    # معالجة الأحرف المخفية
+    # (هنا حيلة برمجية: نستخدم النص الأصلي للعرض مع علامات AI، وننظف النص الخام)
+    
+    # بناء التقرير البصري (دمج علامات AI مع علامات الحذف)
+    # هذه الخطوة تتطلب دقة، لذا سنقوم بمسح بسيط للعرض:
+    final_visual_html = ""
+    
+    # لتجنب تعقيد الكود في دمج HTML مع الرموز، سنقوم بالمسح على النص الذي يحتوي علامات AI مسبقاً
+    # ونضيف عليه علامات الحذف للأحرف المخفية
+    for char in text_with_ai_marks:
+        # إذا كان الحرف جزءاً من تاغ HTML أضفناه سابقاً، نتجاوزه (تبسيط)
+        # لكن بما أننا نعالج حرفاً حرفاً، الأحرف المخفية لن تكون داخل تاغ HTML للكلام
+        
         code = ord(char)
-        category = unicodedata.category(char)
-        
-        # شرط الحذف: هل هو في القائمة السوداء أو تنسيق غير مرئي؟
-        is_bad = (code in BLACKLIST_CHARS) or (category in ['Cf', 'Cc'] and char not in ['\n', '\t', '\r'])
-        
-        if is_bad:
+        if code in BLACKLIST_CHARS or (unicodedata.category(char) in ['Cf'] and code not in [10, 13]): # 10=New line
             label = identify_char(char)
             stats["hidden"] += 1
-            # إضافة وسم أحمر للعرض
-            visual_report += f'<span class="removed-tag" title="تم حذف {label}">[{label}]</span>'
+            final_visual_html += f'<span class="hidden-char" title="تم حذف {label}">[{label}]</span>'
         else:
-            clean_chars.append(char)
-            # تعقيم HTML للعرض
-            safe_char = html.escape(char).replace("\n", "<br>")
-            visual_report += safe_char
+            # الحرف سليم (أو هو جزء من تاغ HTML الخاص بـ AI Phrases)
+            if char == "\n":
+                final_visual_html += "<br>"
+            else:
+                final_visual_html += char
 
-    # تجميع النص الأولي
-    cleaned_string = "".join(clean_chars)
-
-    # 3. إزالة آثار الذكاء الاصطناعي (Markdown)
+    # بناء النص النظيف النهائي (بدون أي HTML أو رموز)
+    final_clean_text = ""
+    for char in text_for_cleaning:
+        if not (ord(char) in BLACKLIST_CHARS or unicodedata.category(char) == 'Cf'):
+            final_clean_text += char
+            
+    # إزالة المارك داون من النص النظيف
     if remove_markdown:
-        # إزالة العريض **text**
-        new_text = re.sub(r'\*\*(.*?)\*\*', r'\1', cleaned_string)
-        if new_text != cleaned_string: stats["markdown"] += 1
-        cleaned_string = new_text
-        
-        # إزالة العناوين ## 
-        new_text = re.sub(r'^#{1,6}\s+', '', cleaned_string, flags=re.MULTILINE)
-        if new_text != cleaned_string: stats["markdown"] += 1
-        cleaned_string = new_text
-        
-        # إزالة الكود `code`
-        cleaned_string = re.sub(r'`(.*?)`', r'\1', cleaned_string)
+        final_clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', final_clean_text) # Bold
+        final_clean_text = re.sub(r'`(.*?)`', r'\1', final_clean_text)       # Code
+        if final_clean_text != text_for_cleaning: stats["markdown"] = 1
 
-    return cleaned_string, visual_report, stats
+    return final_clean_text, final_visual_html, stats
 
-# --- 4. واجهة الشريط الجانبي (Sidebar) ---
+# --- 5. الواجهة (Sidebar & Main) ---
 with st.sidebar:
-    st.title("⚙️ إعدادات التنظيف")
-    
-    st.markdown("### مستوى الصرامة")
-    opt_markdown = st.toggle("إزالة تنسيقات AI (Markdown)", value=True, help="يزيل النجوم ** والعناوين التي يضعها ChatGPT")
-    opt_normalize = st.toggle("تطبيع الأحرف (Normalization)", value=True, help="يحول الأحرف الغريبة والمزخرفة إلى أحرف قياسية")
+    st.title("🛡️ المحرك")
+    st.write("إعدادات الفحص:")
+    st.toggle("كشف عبارات AI (لغوي)", value=True, disabled=True)
+    st.toggle("كشف الرموز المخفية (تقني)", value=True, disabled=True)
     
     st.markdown("---")
-    st.markdown("### 🧪 منطقة التجارب")
-    if st.button("توليد نص خبيث للتجربة"):
-        # نص يحتوي: مسافات صفرية + Markdown + مسافة غير منقطعة
-        st.session_state['input_text'] = "**تحذير:**" + "\u200b" + " هذا النص " + "\u00A0" + "ملغم" + "\u200f" + "!"
+    if st.button("توليد رد AI نمطي للتجربة"):
+        st.session_state['input_text'] = "بصفتي نموذج لغوي، يسعدني مساعدتك.\nإذا تريد، أقدر أنشئ لك الكود." + "\u200b"
 
-# --- 5. الواجهة الرئيسية (Main UI) ---
-st.title("👻 Ghost Buster | قاهر النصوص الخفية")
-st.markdown("""
-<div style="background-color:#262730; padding:10px; border-radius:5px; border-left: 5px solid #ff4b4b;">
-    هذه الأداة تكشف <b>البصمات الرقمية</b> التي تتركها نماذج الذكاء الاصطناعي والمواقع، وتجعلك تنسخ نصاً "نظيفاً برمجياً".
-</div>
-""", unsafe_allow_html=True)
+st.title("👻 Ghost Buster v2.0")
+st.caption("يكشف الرموز المخفية + عبارات الذكاء الاصطناعي النمطية")
 
 if 'input_text' not in st.session_state: st.session_state['input_text'] = ""
 
-col_input, col_action = st.columns([4, 1])
-with col_input:
-    text_input = st.text_area("النص الأصلي:", value=st.session_state['input_text'], height=150, placeholder="الصق النص المشكوك فيه هنا...")
+text_input = st.text_area("النص:", value=st.session_state['input_text'], height=150)
 
-with col_action:
-    st.write("##") # Spacer
-    process_btn = st.button("🔍 فحص\nشامل", type="primary", use_container_width=True)
+if st.button("🚀 تحليل جنائي شامل", type="primary", use_container_width=True):
+    if text_input:
+        clean_text, visual_html, stats = advanced_cleaning(text_input)
+        
+        # النتائج
+        st.markdown("---")
+        c1, c2, c3 = st.columns(3)
+        with c1: 
+            if stats['ai_speech'] > 0:
+                st.metric("بصمة AI اللغوية", f"{stats['ai_speech']} عبارات", delta="Detected", delta_color="inverse")
+            else:
+                st.metric("بصمة AI اللغوية", "0", delta="Clean")
+                
+        with c2: st.metric("رموز مخفية", stats['hidden'], delta="Dangerous" if stats['hidden']>0 else "Safe")
+        with c3: st.metric("تنسيقات Markdown", stats['markdown'])
+        
+        if stats['ai_speech'] > 0:
+            st.warning("⚠️ **تحذير:** النص يحتوي على عبارات نمطية تشير إلى أنه منسوخ من محادثة مع AI (انظر اللون البرتقالي).")
 
-# --- 6. عرض النتائج ---
-if process_btn and text_input:
-    # المعالجة
-    final_text, visual_html, stats = advanced_cleaning(text_input, opt_markdown, opt_normalize)
-    total_issues = stats["hidden"] + stats["markdown"]
-
-    st.markdown("---")
-    
-    # لوحة القيادة (Dashboard)
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        status_color = "inverse" if total_issues > 0 else "normal"
-        status_text = "⚠️ ملوث" if total_issues > 0 else "✅ نظيف"
-        st.metric("الحالة الأمنية", status_text, delta_color=status_color)
-    with c2: st.metric("أحرف مخفية", stats["hidden"], delta="-removed")
-    with c3: st.metric("تنسيقات AI", stats["markdown"], delta="-stripped")
-    with c4: st.metric("عدد الأحرف النهائي", len(final_text))
-
-    # منطقة التفاصيل (Tabs)
-    tab1, tab2, tab3 = st.tabs(["🔴 كشف المستور (X-Ray)", "✨ النص النظيف (للنسخ)", "💻 الكود الخام (Hex)"])
-
-    with tab1:
-        st.markdown("##### ما تراه الأداة ولا تراه عينك:")
-        if total_issues == 0:
-            st.success("النص سليم 100% ولا يحتوي على أي شوائب.")
-        else:
-            st.caption("الرموز الحمراء هي بيانات وصفية تم كشفها:")
+        tab1, tab2 = st.tabs(["🔍 كشف المستور (X-Ray)", "✅ النص النظيف"])
+        
+        with tab1:
+            st.markdown("""
+            <div style="font-size:0.9em; margin-bottom:10px;">
+            دليل الألوان: <span class="hidden-char">أحمر = رمز مخفي</span> | <span class="ai-phrase">برتقالي = كلام AI نمطي</span>
+            </div>
+            """, unsafe_allow_html=True)
             st.markdown(f'<div class="result-box">{visual_html}</div>', unsafe_allow_html=True)
-
-    with tab2:
-        st.markdown("##### النسخة الآمنة الجاهزة للاستخدام:")
-        st.text_area("انسخ من هنا:", value=final_text, height=200, label_visibility="collapsed")
-        # زر نسخ مساعد
-        st.caption("اضغط Ctrl+A ثم Ctrl+C لنسخ النص.")
-
-    with tab3:
-        st.markdown("##### تحليل البيانات الخام (Hex Dump):")
-        # عرض الكود الست عشري للمحترفين
-        hex_data = " ".join([f"{ord(c):04X}" for c in text_input[:100]]) + "..."
-        st.code(hex_data, language="text")
-        st.caption("هذا يعرض أول 100 حرف بصيغة Unicode Hex.")
-
-st.markdown("---")
-st.markdown('<div class="footer">Developed for Security Research • Runs Locally in Memory</div>', unsafe_allow_html=True)
+            
+        with tab2:
+            st.text_area("النص:", value=clean_text, height=200)
