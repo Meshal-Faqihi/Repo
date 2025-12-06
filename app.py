@@ -5,7 +5,7 @@ import html
 import time
 import google.generativeai as genai
 
-# 1. إعدادات الصفحة
+# --- 1. إعدادات الصفحة ---
 st.set_page_config(
     page_title="Ghost Buster Public",
     page_icon="👻",
@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 2. CSS
+# --- 2. CSS ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
@@ -32,7 +32,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 3. المنطق
+# --- 3. المنطق وقواعد البيانات ---
 AI_PHRASES = [
     (r"بصفتي (نموذج|ذكاء|لغوي)", "هوية AI"), (r"إذا (كنت )?تريد", "عرض خيارات"),
     (r"أقدر (أ)?نشئ لك", "عرض مساعدة"), (r"(إليك|ها هو) (النص|الكود|المثال)", "تسليم إجابة"),
@@ -81,45 +81,48 @@ def advanced_cleaning(text, remove_markdown=True, normalize_unicode=True):
     clean_text = "".join(clean_text_builder)
     
     if normalize_unicode: clean_text = unicodedata.normalize("NFKC", clean_text)
-    if remove_markdown: clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
+    
+    # --- هنا تم إصلاح المسافة البادئة (Indentation) ---
+    if remove_markdown:
+        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', clean_text)
     
     return clean_text, visual_html, stats
 
-# --- الدالة الذكية للربط (Smart Auto-Fallback) ---
+# --- الدالة الذكية للربط (Auto-Detect Model) ---
 def humanize_with_gemini(text):
     try:
         api_key = st.secrets["GEMINI_KEY"]
     except:
-        return "خطأ فني: لم يتم ضبط مفتاح API في إعدادات الموقع."
+        return "خطأ فني: لم يتم ضبط مفتاح API في إعدادات الموقع (Secrets)."
 
     genai.configure(api_key=api_key)
     
-    # قائمة الموديلات التي سنجربها بالترتيب
+    # قائمة بجميع الاحتمالات الممكنة لأسماء النماذج
     models_to_try = [
-        'gemini-1.5-flash',
+        'gemini-1.5-flash',       # الخيار الأفضل
         'gemini-1.5-pro',
-        'gemini-1.0-pro',
-        'gemini-pro'
+        'gemini-pro',
+        'models/gemini-1.5-flash',
+        'models/gemini-pro'
     ]
     
     prompt = f"أعد صياغة النص التالي ليكون بأسلوب بشري طبيعي جداً وبسيط وتخلص من نبرة الذكاء الاصطناعي:\n{text}"
     
     last_error = ""
     
-    # حلقة تكرار لتجربة الموديلات
+    # حلقة تكرار لتجربة الموديلات واحداً تلو الآخر
     for model_name in models_to_try:
         try:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
-            return response.text # إذا نجح، نرجع النتيجة ونخرج
+            return response.text # نجح الاتصال!
         except Exception as e:
             last_error = str(e)
-            continue # إذا فشل، نجرب الموديل التالي
+            continue # فشل، جرب التالي
             
-    # إذا فشلت كل الموديلات
-    return f"فشل الاتصال بجميع النماذج. الخطأ الأخير: {last_error}"
+    return f"تعذر الاتصال بجميع النماذج. الخطأ الأخير: {last_error}"
 
-# 4. الواجهة
+# --- 4. واجهة المستخدم ---
 st.markdown("<h1>👻 Ghost Buster <span style='font-size:0.5em; color:#4285F4'>Public</span></h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #888;'>أداة مجانية للجميع لتنظيف النصوص وإعادة صياغتها</p>", unsafe_allow_html=True)
 st.markdown("---")
@@ -156,7 +159,7 @@ if text_input and (clean_btn or humanize_btn):
     if humanize_btn:
         with st.spinner("🤖 جاري إعادة الصياغة (قد تستغرق لحظات)..."):
             final_output = humanize_with_gemini(clean_text)
-            if "خطأ" in final_output or "فشل" in final_output:
+            if "خطأ" in final_output or "تعذر" in final_output:
                 st.toast("حدث خطأ في الخدمة", icon="⚠️")
                 st.error(final_output)
             else:
